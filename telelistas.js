@@ -9,7 +9,12 @@ const PhoneParser = require('./utils/phoneParser')
  */
 const CSV_FIELDS = ['name', 'full_address', 'phones', 'description', 'link']
 
+/**
+ * The entry point page
+ * @type {String}
+ */
 const CLINICS_PAGE = 'http://www.telelistas.net/br/clinicas+medicas?pagina=2'
+
 
 const scrapper = Nightmare({
   // show: true,
@@ -32,60 +37,51 @@ scrapper
     const clinics = Array.from(document.querySelectorAll('#Content_Regs > table'))
     
     return clinics.map(clinic => {
-      let description, address, phones, name, link
+      var link
 
       if (isSponsored(clinic)) {
 
         // Extract description
-        description = clinic.querySelector('.text_registro').textContent.trim()
+        var descriptionNode = clinic.querySelector('.text_registro')
 
         // Extract address
-        address = clinic.querySelector('.text_registro_end').textContent.trim().replace(/[\n\s]+/g, ' ')
+        var addressNode = clinic.querySelector('.text_registro_end')
 
         // Extract Phone
-        let phoneNode = clinic.querySelector('[class^="telInfo"]')
+        var phoneNode = clinic.querySelector('[class^="telInfo"]')
 
-        phones = phoneNode.textContent.trim()
-        digits = findDigitsIn(phoneNode)
+        // Extract name
+        var nameNode = clinic.querySelector('[class^="text_resultado"]')
 
-        // Extract name and link
-        let nameNode = clinic.querySelector('[class^="text_resultado"]')
-
-        name = nameNode.textContent.trim()
-        link = nameNode.parentNode.href.trim()
+        // Extract link
+        var linkNode = nameNode.parentNode
 
       } else {
 
-        // Extract description
-        description = ''
-
         // Extract address
-        address = clinic.querySelector('.text_endereco_ib').textContent.trim().replace(/[\n\s]+/g, ' ')
+        var addressNode = clinic.querySelector('.text_endereco_ib')
 
         // Extract Phone
-        let phoneNode = clinic.querySelector('.text_resultado_ib[align="right"]')
-
-        phones = phoneNode.textContent.trim()
-        digits = findDigitsIn(phoneNode)
+        var phoneNode = clinic.querySelector('.text_resultado_ib[align="right"]')
 
         // Extract name and link
-        let nameNode = clinic.querySelector('.text_resultado_ib > a')
+        var nameNode = clinic.querySelector('.text_resultado_ib > a')
 
-        name = nameNode.textContent.trim()
-        link = nameNode.href.trim()
+        // Extract link
+        var linkNode = nameNode
       }
 
       return {
-        full_address: address,
-        description: description,
-        digits: digits,
-        link: link,
-        phones: phones,
-        name: name,
+        full_address: addressNode.textContent.trim().replace(/[\n\s]+/g, ' '),
+        description: descriptionNode ? descriptionNode.textContent.trim() : '',
+        digits: findDigitsIn(phoneNode),
+        link: linkNode.href.trim(),
+        phones: phoneNode.textContent.trim(),
+        name: nameNode.textContent.trim(),
       }
     })
   })
-  .then(data => {
+  .then(data => { // Parses the data received
     return data
       .map(row => {
         return Object.assign({}, row, {
@@ -93,13 +89,13 @@ scrapper
         })
       })
   })
-  .then(data => {
+  .then(data => { // Generate CSV content
     return json2csv({
       data: data,
       fields: CSV_FIELDS
     })
   })
-  .then(csv => {
+  .then(csv => { // Save the file
     fs.writeFile('exports/clinics.csv', csv, function (err) {
       if (err) {
         throw err
