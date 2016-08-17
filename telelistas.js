@@ -1,12 +1,13 @@
-const Nightmare = require('nightmare')
-const json2csv  = require('json2csv')
-const fs        = require('fs')
+const Nightmare   = require('nightmare')
+const json2csv    = require('json2csv')
+const fs          = require('fs')
+const PhoneParser = require('./utils/phoneParser')
 
 /**
  * Fields to be written in the csv file
  * @type {Array}
  */
-const CSV_FIELDS = ['name', 'full_address', 'phones', 'areas', 'link']
+const CSV_FIELDS = ['name', 'full_address', 'phones', 'description', 'link']
 
 const CLINICS_PAGE = 'http://www.telelistas.net/br/clinicas+medicas?pagina=2'
 
@@ -20,92 +21,77 @@ scrapper
   .wait('#Content_Regs')
   .evaluate(() => {
 
-    const digit1map = {
-      "6F": 0, "6E": 1, "6D": 2, "6C": 3, "6B": 4,
-      "6A": 5, "69": 6, "68": 7, "67": 8, "66": 9,
-    }
-
-    const digit2map = {
-      "7D": 0, "7C": 1, "7F": 2, "7E": 3, "79": 4, 
-      "78": 5, "7B": 6, "7A": 7, "75": 8, "74": 9,
-    }
-
-    const decodeDigits = text => {
-      const firstDigit  = text.substring(0,2)
-      const secondDigit = text.substring(2,4)
-
-      return `${digit1map[firstDigit]}${digit2map[secondDigit]}`
-    }
-
-    const findPhonesIn = node => {
-      const phones = node.textContent.trim()
-
-      const lastDigits = Array.from(node.querySelectorAll('img'))
+    const findDigitsIn = node => {
+      return Array.from(node.querySelectorAll('img'))
         .map(img => img.src)
         .map(src => src.replace(/^.*?t=(.*?)&.*?$/, '$1'))
-        .map(digits => decodeDigits(digits))
-
-      return phones
-        .split('|')
-        .map(phone => phone.replace(/[\n\s]+/g, ' '))
-        .map(phone => phone.replace(/\D+$/, ''))
-        .map(phone => phone.trim())
-        .map((phone, index) => `${phone}${lastDigits[index]}`)
-        .join(', ')
     }
+
+    const isSponsored = clinic => !Boolean(clinic.querySelector('.text_resultado_ib'))
 
     const clinics = Array.from(document.querySelectorAll('#Content_Regs > table'))
     
     return clinics.map(clinic => {
-      let areas, address, phones, name, link
+      let description, address, phones, name, link
 
-      const isSponsored = !Boolean(clinic.querySelector('.text_resultado_ib'))
+      if (isSponsored(clinic)) {
 
-      if (isSponsored) {
-
-        // Extract areas
-        areas = clinic.querySelector('.text_registro').textContent.trim()
+        // Extract description
+        description = clinic.querySelector('.text_registro').textContent.trim()
 
         // Extract address
         address = clinic.querySelector('.text_registro_end').textContent.trim().replace(/[\n\s]+/g, ' ')
 
         // Extract Phone
-        phones = findPhonesIn(clinic.querySelector('[class^="telInfo"]'))
+        let phoneNode = clinic.querySelector('[class^="telInfo"]')
 
-        // Extract name
-        name = clinic.querySelector('[class^="text_resultado"]').textContent.trim()
+        phones = phoneNode.textContent.trim()
+        digits = findDigitsIn(phoneNode)
 
-        // Extract link
-        link = clinic.querySelector('[class^="text_resultado"]').parentNode.href.trim()
+        // Extract name and link
+        let nameNode = clinic.querySelector('[class^="text_resultado"]')
+
+        name = nameNode.textContent.trim()
+        link = nameNode.parentNode.href.trim()
 
       } else {
 
-        // Extract areas
-        areas = ''
+        // Extract description
+        description = ''
 
         // Extract address
         address = clinic.querySelector('.text_endereco_ib').textContent.trim().replace(/[\n\s]+/g, ' ')
 
         // Extract Phone
-        phones = findPhonesIn(clinic.querySelector('.text_resultado_ib[align="right"]'))
+        let phoneNode = clinic.querySelector('.text_resultado_ib[align="right"]')
 
+        phones = phoneNode.textContent.trim()
+        digits = findDigitsIn(phoneNode)
+
+        // Extract name and link
         let nameNode = clinic.querySelector('.text_resultado_ib > a')
 
-        // Extract name
         name = nameNode.textContent.trim()
-
-        // Extract link
         link = nameNode.href.trim()
       }
 
       return {
         full_address: address,
-        areas: areas,
+        description: description,
+        digits: digits,
         link: link,
         phones: phones,
         name: name,
       }
     })
+  })
+  .then(data => {
+    return data
+      .map(row => {
+        return Object.assign({}, row, {
+          phones: PhoneParser.parse(row.phones, row.digits)
+        })
+      })
   })
   .then(data => {
     return json2csv({
