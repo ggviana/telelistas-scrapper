@@ -1,4 +1,4 @@
-# Scrapper [Telelistas](telelistas.net/br/clinicas+medicas)
+# Scrapper [Telelistas](http://telelistas.net/br/clinicas+medicas)
 
 ### Dependências
 * node v6.2.2
